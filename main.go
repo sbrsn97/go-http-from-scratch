@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"net"
 )
@@ -29,19 +30,30 @@ func handleConnection(conn net.Conn) {
 
 	fmt.Println("Client connected:", conn.RemoteAddr())
 
-	buffer := make([]byte, 1024)
-	n, err := conn.Read(buffer)
-	if err != nil {
-		fmt.Println("Read error:", err)
-		return
+	readBuffer := make([]byte, 1024)
+	var data []byte
+
+	for {
+		n, err := conn.Read(readBuffer)
+		if err != nil {
+			fmt.Println("Read error:", err)
+			return
+		}
+
+		data = append(data, readBuffer[:n]...)
+
+		fmt.Printf("read %d bytes, total %d bytes\n", n, len(data))
+
+		if bytes.Contains(data, []byte("\r\n\r\n")) {
+			break
+		}
 	}
 
-	fmt.Printf("read %d bytes\n", n)
-	fmt.Println("-------raw data-------")
-	fmt.Print(string(buffer[:n]))
-	fmt.Println("----------------------")
+	fmt.Println("------- complete header block -------")
+	fmt.Print(string(data))
+	fmt.Println("-------------------------------------")
 
-	_, err = conn.Write([]byte("received\n"))
+	_, err := conn.Write([]byte("received\n"))
 	if err != nil {
 		fmt.Println("Write error:", err)
 	}
