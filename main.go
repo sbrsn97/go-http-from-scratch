@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 )
 
 func main() {
@@ -64,9 +65,37 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 
-	fmt.Println("method:", method)
-	fmt.Println("target:", target)
-	fmt.Println("version:", version)
+	headerEnd := bytes.Index(data, []byte("\r\n\r\n"))
+	if headerEnd == -1 {
+		fmt.Println("Invalid request: missing header terminator")
+		return
+	}
+
+	headerBlock := data[:headerEnd]
+
+	headerLines := bytes.Split(headerBlock, []byte("\r\n"))
+
+	if len(headerLines) < 1 {
+		fmt.Println("Invalid request: empty request")
+		return
+	}
+
+	headers, err := parseHeaders(headerLines[1:])
+	if err != nil {
+		fmt.Println("Invalid request:", err)
+		return
+	}
+
+	fmt.Printf("Method: %s, Target: %s, Version: %s\n", method, target, version)
+	fmt.Println("Headers:", headers)
+
+	host, ok := headers["host"]
+	if !ok {
+		fmt.Println("Invalid request: missing Host header")
+		return
+	}
+
+	fmt.Println("Host: ", host)
 
 	_, err = conn.Write([]byte("received\n"))
 	if err != nil {
@@ -93,4 +122,27 @@ func parseRequestLine(line []byte) (string, string, string, error) {
 	}
 
 	return method, target, version, nil
+}
+
+func parseHeaders(lines [][]byte) (map[string]string, error) {
+	headers := make(map[string]string)
+
+	for _, line := range lines {
+		parts := bytes.SplitN(line, []byte(":"), 2)
+
+		if len(parts) != 2 {
+			return nil, errors.New("invalid header line: " + string(line))
+		}
+
+		name := strings.ToLower(string(bytes.TrimSpace(parts[0])))
+		value := string(bytes.TrimSpace(parts[1]))
+
+		if name == "" {
+			return nil, errors.New("header name cannot be empty")
+		}
+
+		headers[name] = value
+	}
+
+	return headers, nil
 }
