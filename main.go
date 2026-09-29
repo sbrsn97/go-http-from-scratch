@@ -5,8 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 )
+
+type Request struct {
+	Method  string
+	Target  string
+	Version string
+	Headers map[string]string
+	Body    []byte
+}
 
 func main() {
 	listener, err := net.Listen("tcp", ":8080")
@@ -86,8 +95,41 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 
-	fmt.Printf("Method: %s, Target: %s, Version: %s\n", method, target, version)
-	fmt.Println("Headers:", headers)
+	length, err := contentLength(headers)
+	if err != nil {
+		fmt.Println("Invalid request:", err)
+		return
+	}
+
+	bodyStart := headerEnd + 4 // Skip the "\r\n\r\n" sequence
+	bodyBytesAvailable := len(data) - bodyStart
+
+	for bodyBytesAvailable < length {
+		n, err := conn.Read(readBuffer)
+		if err != nil {
+			fmt.Println("read body error:", err)
+			return
+		}
+
+		data = append(data, readBuffer[:n]...)
+		bodyBytesAvailable = len(data) - bodyStart
+	}
+
+	body := data[bodyStart : bodyStart+length]
+
+	req := Request{
+		Method:  method,
+		Target:  target,
+		Version: version,
+		Headers: headers,
+		Body:    body,
+	}
+
+	fmt.Println("method: ", req.Method)
+	fmt.Println("target: ", req.Target)
+	fmt.Println("version: ", req.Version)
+	fmt.Println("headers: ", req.Headers)
+	fmt.Println("body: ", string(req.Body))
 
 	host, ok := headers["host"]
 	if !ok {
@@ -145,4 +187,22 @@ func parseHeaders(lines [][]byte) (map[string]string, error) {
 	}
 
 	return headers, nil
+}
+
+func contentLength(headers map[string]string) (int, error) {
+	value, ok := headers["content-length"]
+	if !ok {
+		return 0, nil
+	}
+
+	length, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, errors.New("invalid Content-Length")
+	}
+
+	if length < 0 {
+		return 0, errors.New("Content-Length cannot be negative")
+	}
+
+	return length, nil
 }
