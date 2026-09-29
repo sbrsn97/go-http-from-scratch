@@ -17,6 +17,13 @@ type Request struct {
 	Body    []byte
 }
 
+type Response struct {
+	StatusCode int
+	StatusText string
+	Headers    map[string]string
+	Body       []byte
+}
+
 func main() {
 	listener, err := net.Listen("tcp", ":8080")
 	if err != nil {
@@ -139,9 +146,33 @@ func handleConnection(conn net.Conn) {
 
 	fmt.Println("Host: ", host)
 
-	_, err = conn.Write([]byte("received\n"))
+	var resp Response
+
+	if req.Target == "/hello" {
+		resp = Response{
+			StatusCode: 200,
+			StatusText: "OK",
+			Headers: map[string]string{
+				"Content-Type": "text/plain",
+			},
+			Body: []byte("hello from our HTTP server\n"),
+		}
+	} else {
+		resp = Response{
+			StatusCode: 404,
+			StatusText: "Not Found",
+			Headers: map[string]string{
+				"Content-Type": "text/plain",
+			},
+			Body: []byte("404 Not Found\n"),
+		}
+	}
+
+	responseBytes := serializeResponse(resp)
+
+	_, err = conn.Write(responseBytes)
 	if err != nil {
-		fmt.Println("Write error:", err)
+		fmt.Println("write response error:", err)
 	}
 }
 
@@ -205,4 +236,32 @@ func contentLength(headers map[string]string) (int, error) {
 	}
 
 	return length, nil
+}
+
+func serializeResponse(resp Response) []byte {
+	if resp.Headers == nil {
+		resp.Headers = make(map[string]string)
+	}
+
+	var data []byte
+
+	statusLine := fmt.Sprintf(
+		"HTTP/1.1 %d %s\r\n",
+		resp.StatusCode,
+		resp.StatusText,
+	)
+
+	data = append(data, []byte(statusLine)...)
+
+	resp.Headers["Content-Length"] = strconv.Itoa(len(resp.Body))
+
+	for name, value := range resp.Headers {
+		headerLine := fmt.Sprintf("%s: %s\r\n", name, value)
+		data = append(data, []byte(headerLine)...)
+	}
+
+	data = append(data, []byte("\r\n")...)
+	data = append(data, resp.Body...)
+
+	return data
 }
