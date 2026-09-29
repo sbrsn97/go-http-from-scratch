@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net"
 )
@@ -49,12 +50,47 @@ func handleConnection(conn net.Conn) {
 		}
 	}
 
-	fmt.Println("------- complete header block -------")
-	fmt.Print(string(data))
-	fmt.Println("-------------------------------------")
+	lineEnd := bytes.Index(data, []byte("\r\n"))
+	if lineEnd == -1 {
+		fmt.Println("Invalid request: missing request line terminator")
+		return
+	}
 
-	_, err := conn.Write([]byte("received\n"))
+	requestLine := data[:lineEnd]
+
+	method, target, version, err := parseRequestLine(requestLine)
+	if err != nil {
+		fmt.Println("Invalid request:", err)
+		return
+	}
+
+	fmt.Println("method:", method)
+	fmt.Println("target:", target)
+	fmt.Println("version:", version)
+
+	_, err = conn.Write([]byte("received\n"))
 	if err != nil {
 		fmt.Println("Write error:", err)
 	}
+}
+
+func parseRequestLine(line []byte) (string, string, string, error) {
+	parts := bytes.Split(line, []byte(" "))
+
+	if len(parts) != 3 {
+		return "", "", "", errors.New("request line must contain exactly three parts")
+	}
+
+	method := string(parts[0])
+	if method != "GET" && method != "POST" {
+		return "", "", "", errors.New("unsupported HTTP method: " + method)
+	}
+
+	target := string(parts[1])
+	version := string(parts[2])
+	if version != "HTTP/1.1" {
+		return "", "", "", errors.New("unsupported HTTP version: " + version)
+	}
+
+	return method, target, version, nil
 }
