@@ -145,19 +145,56 @@ func readRequest(conn net.Conn) (Request, error) {
 
 func handleRequest(req Request) Response {
 	if req.Target == "/hello" {
+		if req.Method != "GET" {
+			return Response{
+				StatusCode: 405,
+				StatusText: "Method Not Allowed",
+				Headers: map[string]string{
+					"Content-Type": "text/plain",
+				},
+				Body: []byte("method not allowed\n"),
+			}
+		}
+
 		return Response{
 			StatusCode: 200,
 			StatusText: "OK",
-			Headers:    map[string]string{"Content-Type": "text/plain"},
-			Body:       []byte("hello from our HTTP server\n"),
+			Headers: map[string]string{
+				"Content-Type": "text/plain",
+			},
+			Body: []byte("hello from our HTTP server\n"),
+		}
+	}
+
+	if req.Target == "/echo" {
+		if req.Method != "POST" {
+			return Response{
+				StatusCode: 405,
+				StatusText: "Method Not Allowed",
+				Headers: map[string]string{
+					"Content-Type": "text/plain",
+				},
+				Body: []byte("method not allowed\n"),
+			}
+		}
+
+		return Response{
+			StatusCode: 200,
+			StatusText: "OK",
+			Headers: map[string]string{
+				"Content-Type": "text/plain",
+			},
+			Body: req.Body,
 		}
 	}
 
 	return Response{
 		StatusCode: 404,
 		StatusText: "Not Found",
-		Headers:    map[string]string{"Content-Type": "text/plain"},
-		Body:       []byte("404 Not Found"),
+		Headers: map[string]string{
+			"Content-Type": "text/plain",
+		},
+		Body: []byte("404 Not Found\n"),
 	}
 }
 
@@ -176,9 +213,6 @@ func parseRequestLine(line []byte) (string, string, string, error) {
 	}
 
 	method := string(parts[0])
-	if method != "GET" && method != "POST" {
-		return "", "", "", errors.New("unsupported HTTP method: " + method)
-	}
 
 	target := string(parts[1])
 	version := string(parts[2])
