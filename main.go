@@ -48,64 +48,73 @@ func handleConnection(conn net.Conn) {
 
 	fmt.Println("Client connected:", conn.RemoteAddr())
 
+	req, err := readRequest(conn)
+	if err != nil {
+		fmt.Println("invalid request:", err)
+		return
+	}
+
+	fmt.Println("method:", req.Method)
+	fmt.Println("target:", req.Target)
+	fmt.Println("version:", req.Version)
+	fmt.Println("headers:", req.Headers)
+	fmt.Println("body:", string(req.Body))
+
+	resp := handleRequest(req)
+
+	err = writeResponse(conn, resp)
+	if err != nil {
+		fmt.Println("write response error:", err)
+	}
+}
+
+func readRequest(conn net.Conn) (Request, error) {
 	readBuffer := make([]byte, 1024)
 	var data []byte
+	headerEnd := -1
 
 	for {
 		n, err := conn.Read(readBuffer)
 		if err != nil {
-			fmt.Println("Read error:", err)
-			return
+			return Request{}, err
 		}
 
 		data = append(data, readBuffer[:n]...)
 
-		fmt.Printf("read %d bytes, total %d bytes\n", n, len(data))
-
-		if bytes.Contains(data, []byte("\r\n\r\n")) {
+		headerEnd = bytes.Index(data, []byte("\r\n\r\n"))
+		if headerEnd != -1 {
 			break
 		}
 	}
 
-	lineEnd := bytes.Index(data, []byte("\r\n"))
-	if lineEnd == -1 {
-		fmt.Println("Invalid request: missing request line terminator")
-		return
-	}
-
-	requestLine := data[:lineEnd]
-
-	method, target, version, err := parseRequestLine(requestLine)
-	if err != nil {
-		fmt.Println("Invalid request:", err)
-		return
-	}
-
-	headerEnd := bytes.Index(data, []byte("\r\n\r\n"))
 	if headerEnd == -1 {
-		fmt.Println("Invalid request: missing header terminator")
-		return
+		return Request{}, errors.New("missing header terminator")
 	}
 
 	headerBlock := data[:headerEnd]
-
 	headerLines := bytes.Split(headerBlock, []byte("\r\n"))
 
 	if len(headerLines) < 1 {
-		fmt.Println("Invalid request: empty request")
-		return
+		return Request{}, errors.New("empty request")
+	}
+
+	method, target, version, err := parseRequestLine(headerLines[0])
+	if err != nil {
+		return Request{}, err
 	}
 
 	headers, err := parseHeaders(headerLines[1:])
 	if err != nil {
-		fmt.Println("Invalid request:", err)
-		return
+		return Request{}, err
+	}
+
+	if _, ok := headers["host"]; !ok {
+		return Request{}, errors.New("missing host header")
 	}
 
 	length, err := contentLength(headers)
 	if err != nil {
-		fmt.Println("Invalid request:", err)
-		return
+		return Request{}, err
 	}
 
 	bodyStart := headerEnd + 4 // Skip the "\r\n\r\n" sequence
@@ -114,8 +123,7 @@ func handleConnection(conn net.Conn) {
 	for bodyBytesAvailable < length {
 		n, err := conn.Read(readBuffer)
 		if err != nil {
-			fmt.Println("read body error:", err)
-			return
+			return Request{}, err
 		}
 
 		data = append(data, readBuffer[:n]...)
@@ -132,48 +140,32 @@ func handleConnection(conn net.Conn) {
 		Body:    body,
 	}
 
-	fmt.Println("method: ", req.Method)
-	fmt.Println("target: ", req.Target)
-	fmt.Println("version: ", req.Version)
-	fmt.Println("headers: ", req.Headers)
-	fmt.Println("body: ", string(req.Body))
+	return req, nil
+}
 
-	host, ok := headers["host"]
-	if !ok {
-		fmt.Println("Invalid request: missing Host header")
-		return
-	}
-
-	fmt.Println("Host: ", host)
-
-	var resp Response
-
+func handleRequest(req Request) Response {
 	if req.Target == "/hello" {
-		resp = Response{
+		return Response{
 			StatusCode: 200,
 			StatusText: "OK",
-			Headers: map[string]string{
-				"Content-Type": "text/plain",
-			},
-			Body: []byte("hello from our HTTP server\n"),
-		}
-	} else {
-		resp = Response{
-			StatusCode: 404,
-			StatusText: "Not Found",
-			Headers: map[string]string{
-				"Content-Type": "text/plain",
-			},
-			Body: []byte("404 Not Found\n"),
+			Headers:    map[string]string{"Content-Type": "text/plain"},
+			Body:       []byte("hello from our HTTP server\n"),
 		}
 	}
 
+	return Response{
+		StatusCode: 404,
+		StatusText: "Not Found",
+		Headers:    map[string]string{"Content-Type": "text/plain"},
+		Body:       []byte("404 Not Found"),
+	}
+}
+
+func writeResponse(conn net.Conn, resp Response) error {
 	responseBytes := serializeResponse(resp)
 
-	_, err = conn.Write(responseBytes)
-	if err != nil {
-		fmt.Println("write response error:", err)
-	}
+	_, err := conn.Write(responseBytes)
+	return err
 }
 
 func parseRequestLine(line []byte) (string, string, string, error) {
