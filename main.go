@@ -10,11 +10,13 @@ import (
 )
 
 type Request struct {
-	Method  string
-	Target  string
-	Version string
-	Headers map[string]string
-	Body    []byte
+	Method   string
+	Target   string
+	Path     string
+	RawQuery string
+	Version  string
+	Headers  map[string]string
+	Body     []byte
 }
 
 type Response struct {
@@ -56,6 +58,8 @@ func handleConnection(conn net.Conn) {
 
 	fmt.Println("method:", req.Method)
 	fmt.Println("target:", req.Target)
+	fmt.Println("path:", req.Path)
+	fmt.Println("raw query:", req.RawQuery)
 	fmt.Println("version:", req.Version)
 	fmt.Println("headers:", req.Headers)
 	fmt.Println("body:", string(req.Body))
@@ -103,6 +107,8 @@ func readRequest(conn net.Conn) (Request, error) {
 		return Request{}, err
 	}
 
+	path, rawQuery := parseRequestTarget(target)
+
 	headers, err := parseHeaders(headerLines[1:])
 	if err != nil {
 		return Request{}, err
@@ -133,18 +139,20 @@ func readRequest(conn net.Conn) (Request, error) {
 	body := data[bodyStart : bodyStart+length]
 
 	req := Request{
-		Method:  method,
-		Target:  target,
-		Version: version,
-		Headers: headers,
-		Body:    body,
+		Method:   method,
+		Target:   target,
+		Path:     path,
+		RawQuery: rawQuery,
+		Version:  version,
+		Headers:  headers,
+		Body:     body,
 	}
 
 	return req, nil
 }
 
 func handleRequest(req Request) Response {
-	if req.Target == "/hello" {
+	if req.Path == "/hello" {
 		if req.Method != "GET" {
 			return Response{
 				StatusCode: 405,
@@ -166,7 +174,7 @@ func handleRequest(req Request) Response {
 		}
 	}
 
-	if req.Target == "/echo" {
+	if req.Path == "/echo" {
 		if req.Method != "POST" {
 			return Response{
 				StatusCode: 405,
@@ -221,6 +229,19 @@ func parseRequestLine(line []byte) (string, string, string, error) {
 	}
 
 	return method, target, version, nil
+}
+
+func parseRequestTarget(target string) (string, string) {
+	index := strings.Index(target, "?")
+
+	if index == -1 {
+		return target, ""
+	}
+
+	path := target[:index]
+	rawQuery := target[index+1:]
+
+	return path, rawQuery
 }
 
 func parseHeaders(lines [][]byte) (map[string]string, error) {
