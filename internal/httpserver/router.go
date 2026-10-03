@@ -1,6 +1,9 @@
 package httpserver
 
-import "os"
+import (
+	"os"
+	"strings"
+)
 
 func handleRequest(req Request) Response {
 	if req.Path == "/" {
@@ -35,6 +38,21 @@ func handleRequest(req Request) Response {
 			},
 			Body: data,
 		}
+	}
+
+	if strings.HasPrefix(req.Path, "/static/") {
+		if req.Method != "GET" {
+			return Response{
+				StatusCode: 405,
+				StatusText: "Method Not Allowed",
+				Headers: map[string]string{
+					"Content-Type": "text/plain",
+				},
+				Body: []byte("method not allowed\n"),
+			}
+		}
+
+		return serveStaticFile(req.Path)
 	}
 
 	if req.Path == "/hello" {
