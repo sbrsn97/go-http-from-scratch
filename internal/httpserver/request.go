@@ -90,7 +90,10 @@ func (r *requestReader) readRequest() (Request, error) {
 		return Request{}, err
 	}
 
-	path, rawQuery := parseRequestTarget(target)
+	path, rawQuery, err := parseRequestTarget(target)
+	if err != nil {
+		return Request{}, err
+	}
 
 	headers, err := parseHeaders(headerLines[1:])
 	if err != nil {
@@ -157,34 +160,61 @@ func parseRequestLine(line []byte) (string, string, string, error) {
 	return method, target, version, nil
 }
 
-func parseRequestTarget(target string) (string, string) {
-	index := strings.Index(target, "?")
+func parseRequestTarget(target string) (string, string, error) {
+	if target == "" {
+		return "", "", errors.New("empty request target")
+	}
 
+	if !strings.HasPrefix(target, "/") {
+		return "", "", errors.New("unsupported request target")
+	}
+
+	index := strings.Index(target, "?")
 	if index == -1 {
-		return target, ""
+		return target, "", nil
 	}
 
 	path := target[:index]
 	rawQuery := target[index+1:]
 
-	return path, rawQuery
+	return path, rawQuery, nil
 }
 
 func parseHeaders(lines [][]byte) (map[string]string, error) {
 	headers := make(map[string]string)
 
 	for _, line := range lines {
+		if len(line) == 0 {
+			return nil, errors.New("unexpected empty header line")
+		}
+
 		parts := bytes.SplitN(line, []byte(":"), 2)
 
 		if len(parts) != 2 {
-			return nil, errors.New("invalid header line: " + string(line))
+			return nil, errors.New("invalid header line")
 		}
 
-		name := strings.ToLower(string(bytes.TrimSpace(parts[0])))
+		rawName := parts[0]
+
+		if len(rawName) == 0 {
+			return nil, errors.New("header name cannot be empty")
+		}
+
+		if bytes.ContainsAny(rawName, " \t") {
+			return nil, errors.New("invalid whitespace in header name")
+		}
+
+		name := strings.ToLower(string(rawName))
 		value := string(bytes.TrimSpace(parts[1]))
 
 		if name == "" {
 			return nil, errors.New("header name cannot be empty")
+		}
+
+		if name == "content-length" {
+			if _, exists := headers[name]; exists {
+				return nil, errors.New("duplicate Content-Length")
+			}
 		}
 
 		headers[name] = value
