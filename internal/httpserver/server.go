@@ -59,6 +59,28 @@ func handleConnection(conn net.Conn) {
 				return
 			}
 
+			if errors.Is(err, errHeaderTooLarge) {
+				resp := requestHeaderFieldsTooLargeResponse()
+				resp.Headers["Connection"] = "close"
+
+				if writeErr := writeResponse(conn, resp); writeErr != nil {
+					fmt.Println("write response error:", writeErr)
+				}
+
+				return
+			}
+
+			if errors.Is(err, errBodyTooLarge) {
+				resp := contentTooLargeResponse()
+				resp.Headers["Connection"] = "close"
+
+				if writeErr := writeResponse(conn, resp); writeErr != nil {
+					fmt.Println("write response error:", writeErr)
+				}
+
+				return
+			}
+
 			fmt.Println("read request error:", err)
 			return
 		}

@@ -23,6 +23,32 @@ type requestReader struct {
 	data []byte
 }
 
+const (
+	maxHeaderBytes = 16 * 1024       // 16 KB
+	maxBodyBytes   = 1 * 1024 * 1024 // 1 MB
+)
+
+var (
+	errHeaderTooLarge = errors.New("request headers too large")
+	errBodyTooLarge   = errors.New("request body too large")
+)
+
+func requestHeaderFieldsTooLargeResponse() Response {
+	return textResponse(
+		431,
+		"Request Header Fields Too Large",
+		"request headers too large\n",
+	)
+}
+
+func contentTooLargeResponse() Response {
+	return textResponse(
+		413,
+		"Content Too Large",
+		"request body too large\n",
+	)
+}
+
 func newRequestReader(conn net.Conn) *requestReader {
 	return &requestReader{
 		conn: conn,
@@ -35,6 +61,10 @@ func (r *requestReader) readRequest() (Request, error) {
 	headerEnd := bytes.Index(r.data, []byte("\r\n\r\n"))
 
 	for headerEnd == -1 {
+		if len(r.data) > maxHeaderBytes {
+			return Request{}, errHeaderTooLarge
+		}
+
 		n, err := r.conn.Read(readBuffer)
 		if err != nil {
 			return Request{}, err
@@ -42,6 +72,10 @@ func (r *requestReader) readRequest() (Request, error) {
 
 		r.data = append(r.data, readBuffer[:n]...)
 		headerEnd = bytes.Index(r.data, []byte("\r\n\r\n"))
+	}
+
+	if headerEnd+4 > maxHeaderBytes {
+		return Request{}, errHeaderTooLarge
 	}
 
 	headerBlock := r.data[:headerEnd]
@@ -70,6 +104,10 @@ func (r *requestReader) readRequest() (Request, error) {
 	length, err := contentLength(headers)
 	if err != nil {
 		return Request{}, err
+	}
+
+	if length > maxBodyBytes {
+		return Request{}, errBodyTooLarge
 	}
 
 	bodyStart := headerEnd + 4
