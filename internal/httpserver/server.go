@@ -6,6 +6,12 @@ import (
 	"io"
 	"net"
 	"strings"
+	"time"
+)
+
+const (
+	readTimeout  = 5 * time.Second
+	writeTimeout = 5 * time.Second
 )
 
 func ListenAndServe(addr string) error {
@@ -24,7 +30,7 @@ func ListenAndServe(addr string) error {
 			return err
 		}
 
-		handleConnection(conn)
+		go handleConnection(conn)
 	}
 }
 
@@ -36,9 +42,20 @@ func handleConnection(conn net.Conn) {
 	reader := newRequestReader(conn)
 
 	for {
+		if err := conn.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
+			fmt.Println("set read deadline error:", err)
+			return
+		}
+
 		req, err := reader.readRequest()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
+				return
+			}
+
+			var netErr net.Error
+			if errors.As(err, &netErr) && netErr.Timeout() {
+				fmt.Println("connection timed out:", conn.RemoteAddr())
 				return
 			}
 
@@ -62,6 +79,11 @@ func handleConnection(conn net.Conn) {
 			}
 
 			resp.Headers["Connection"] = "close"
+		}
+
+		if err := conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+			fmt.Println("set write deadline error:", err)
+			return
 		}
 
 		if err := writeResponse(conn, resp); err != nil {
