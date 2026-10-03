@@ -47,3 +47,38 @@ func serializeResponse(resp Response) []byte {
 
 	return data
 }
+
+func textResponse(statusCode int, statusText string, body string) Response {
+	return Response{
+		StatusCode: statusCode,
+		StatusText: statusText,
+		Headers: map[string]string{
+			"Content-Type": "text/plain; charset=utf-8",
+		},
+		Body: []byte(body),
+	}
+}
+
+func notFoundResponse() Response {
+	return textResponse(
+		404,
+		"Not Found",
+		"404 Not Found\n",
+	)
+}
+
+func methodNotAllowedResponse() Response {
+	return textResponse(
+		405,
+		"Method Not Allowed",
+		"method not allowed\n",
+	)
+}
+
+func internalServerErrorResponse() Response {
+	return textResponse(
+		500,
+		"Internal Server Error",
+		"internal server error\n",
+	)
+}

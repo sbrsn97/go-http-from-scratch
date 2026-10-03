@@ -42,26 +42,12 @@ func staticFilePath(requestPath string) (string, bool) {
 func serveStaticFile(requestPath string) Response {
 	filePath, ok := staticFilePath(requestPath)
 	if !ok {
-		return Response{
-			StatusCode: 404,
-			StatusText: "Not Found",
-			Headers: map[string]string{
-				"Content-Type": "text/plain",
-			},
-			Body: []byte("404 Not Found\n"),
-		}
+		return notFoundResponse()
 	}
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return Response{
-			StatusCode: 404,
-			StatusText: "Not Found",
-			Headers: map[string]string{
-				"Content-Type": "text/plain",
-			},
-			Body: []byte("404 Not Found\n"),
-		}
+		return notFoundResponse()
 	}
 
 	contentType := mime.TypeByExtension(filepath.Ext(filePath))

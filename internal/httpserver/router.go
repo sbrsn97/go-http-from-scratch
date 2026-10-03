@@ -8,26 +8,12 @@ import (
 func handleRequest(req Request) Response {
 	if req.Path == "/" {
 		if req.Method != "GET" {
-			return Response{
-				StatusCode: 405,
-				StatusText: "Method Not Allowed",
-				Headers: map[string]string{
-					"Content-Type": "text/plain",
-				},
-				Body: []byte("method not allowed\n"),
-			}
+			return methodNotAllowedResponse()
 		}
 
 		data, err := os.ReadFile("public/index.html")
 		if err != nil {
-			return Response{
-				StatusCode: 500,
-				StatusText: "Internal Server Error",
-				Headers: map[string]string{
-					"Content-Type": "text/plain",
-				},
-				Body: []byte("internal server error\n"),
-			}
+			return internalServerErrorResponse()
 		}
 
 		return Response{
@@ -42,14 +28,7 @@ func handleRequest(req Request) Response {
 
 	if strings.HasPrefix(req.Path, "/static/") {
 		if req.Method != "GET" {
-			return Response{
-				StatusCode: 405,
-				StatusText: "Method Not Allowed",
-				Headers: map[string]string{
-					"Content-Type": "text/plain",
-				},
-				Body: []byte("method not allowed\n"),
-			}
+			return methodNotAllowedResponse()
 		}
 
 		return serveStaticFile(req.Path)
@@ -57,14 +36,7 @@ func handleRequest(req Request) Response {
 
 	if req.Path == "/hello" {
 		if req.Method != "GET" {
-			return Response{
-				StatusCode: 405,
-				StatusText: "Method Not Allowed",
-				Headers: map[string]string{
-					"Content-Type": "text/plain",
-				},
-				Body: []byte("method not allowed\n"),
-			}
+			return methodNotAllowedResponse()
 		}
 
 		return Response{
@@ -79,14 +51,7 @@ func handleRequest(req Request) Response {
 
 	if req.Path == "/echo" {
 		if req.Method != "POST" {
-			return Response{
-				StatusCode: 405,
-				StatusText: "Method Not Allowed",
-				Headers: map[string]string{
-					"Content-Type": "text/plain",
-				},
-				Body: []byte("method not allowed\n"),
-			}
+			return methodNotAllowedResponse()
 		}
 
 		return Response{
@@ -99,12 +64,5 @@ func handleRequest(req Request) Response {
 		}
 	}
 
-	return Response{
-		StatusCode: 404,
-		StatusText: "Not Found",
-		Headers: map[string]string{
-			"Content-Type": "text/plain",
-		},
-		Body: []byte("404 Not Found\n"),
-	}
+	return notFoundResponse()
 }
