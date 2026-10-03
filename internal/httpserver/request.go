@@ -18,30 +18,33 @@ type Request struct {
 	Body     []byte
 }
 
-func readRequest(conn net.Conn) (Request, error) {
-	readBuffer := make([]byte, 1024)
-	var data []byte
-	headerEnd := -1
+type requestReader struct {
+	conn net.Conn
+	data []byte
+}
 
-	for {
-		n, err := conn.Read(readBuffer)
+func newRequestReader(conn net.Conn) *requestReader {
+	return &requestReader{
+		conn: conn,
+	}
+}
+
+func (r *requestReader) readRequest() (Request, error) {
+	readBuffer := make([]byte, 1024)
+
+	headerEnd := bytes.Index(r.data, []byte("\r\n\r\n"))
+
+	for headerEnd == -1 {
+		n, err := r.conn.Read(readBuffer)
 		if err != nil {
 			return Request{}, err
 		}
 
-		data = append(data, readBuffer[:n]...)
-
-		headerEnd = bytes.Index(data, []byte("\r\n\r\n"))
-		if headerEnd != -1 {
-			break
-		}
+		r.data = append(r.data, readBuffer[:n]...)
+		headerEnd = bytes.Index(r.data, []byte("\r\n\r\n"))
 	}
 
-	if headerEnd == -1 {
-		return Request{}, errors.New("missing header terminator")
-	}
-
-	headerBlock := data[:headerEnd]
+	headerBlock := r.data[:headerEnd]
 	headerLines := bytes.Split(headerBlock, []byte("\r\n"))
 
 	if len(headerLines) < 1 {
@@ -69,20 +72,19 @@ func readRequest(conn net.Conn) (Request, error) {
 		return Request{}, err
 	}
 
-	bodyStart := headerEnd + 4 // Skip the "\r\n\r\n" sequence
-	bodyBytesAvailable := len(data) - bodyStart
+	bodyStart := headerEnd + 4
+	requestEnd := bodyStart + length
 
-	for bodyBytesAvailable < length {
-		n, err := conn.Read(readBuffer)
+	for len(r.data) < requestEnd {
+		n, err := r.conn.Read(readBuffer)
 		if err != nil {
 			return Request{}, err
 		}
 
-		data = append(data, readBuffer[:n]...)
-		bodyBytesAvailable = len(data) - bodyStart
+		r.data = append(r.data, readBuffer[:n]...)
 	}
 
-	body := data[bodyStart : bodyStart+length]
+	body := append([]byte(nil), r.data[bodyStart:requestEnd]...)
 
 	req := Request{
 		Method:   method,
@@ -93,6 +95,8 @@ func readRequest(conn net.Conn) (Request, error) {
 		Headers:  headers,
 		Body:     body,
 	}
+
+	r.data = r.data[requestEnd:]
 
 	return req, nil
 }

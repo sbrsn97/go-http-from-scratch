@@ -1,8 +1,11 @@
 package httpserver
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"net"
+	"strings"
 )
 
 func ListenAndServe(addr string) error {
@@ -30,24 +33,44 @@ func handleConnection(conn net.Conn) {
 
 	fmt.Println("Client connected:", conn.RemoteAddr())
 
-	req, err := readRequest(conn)
-	if err != nil {
-		fmt.Println("invalid request:", err)
-		return
-	}
+	reader := newRequestReader(conn)
 
-	fmt.Println("method:", req.Method)
-	fmt.Println("target:", req.Target)
-	fmt.Println("path:", req.Path)
-	fmt.Println("raw query:", req.RawQuery)
-	fmt.Println("version:", req.Version)
-	fmt.Println("headers:", req.Headers)
-	fmt.Println("body:", string(req.Body))
+	for {
+		req, err := reader.readRequest()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return
+			}
 
-	resp := handleRequest(req)
+			fmt.Println("read request error:", err)
+			return
+		}
 
-	err = writeResponse(conn, resp)
-	if err != nil {
-		fmt.Println("write response error:", err)
+		fmt.Println("method:", req.Method)
+		fmt.Println("path:", req.Path)
+
+		shouldClose := strings.EqualFold(
+			req.Headers["connection"],
+			"close",
+		)
+
+		resp := handleRequest(req)
+
+		if shouldClose {
+			if resp.Headers == nil {
+				resp.Headers = make(map[string]string)
+			}
+
+			resp.Headers["Connection"] = "close"
+		}
+
+		if err := writeResponse(conn, resp); err != nil {
+			fmt.Println("write response error:", err)
+			return
+		}
+
+		if shouldClose {
+			return
+		}
 	}
 }
