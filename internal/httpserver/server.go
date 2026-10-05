@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -27,7 +28,10 @@ func ListenAndServe(ctx context.Context, addr string) error {
 
 	var wg sync.WaitGroup
 
-	handler := loggingMiddleware(handleRequest)
+	handler := Handler(handleRequest)
+	if os.Getenv("HTTP_SERVER_LOGGING") == "1" {
+		handler = loggingMiddleware(handler)
+	}
 
 	go func() {
 		<-ctx.Done()
