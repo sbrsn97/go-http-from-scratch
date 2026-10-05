@@ -5,6 +5,9 @@ import (
 	"strings"
 )
 
+type Handler func(Request) Response
+type Middleware func(Handler) Handler
+
 func handleRequest(req Request) Response {
 	if req.Path == "/" {
 		if req.Method != "GET" {

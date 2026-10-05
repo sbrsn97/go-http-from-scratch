@@ -27,6 +27,8 @@ func ListenAndServe(ctx context.Context, addr string) error {
 
 	var wg sync.WaitGroup
 
+	handler := loggingMiddleware(handleRequest)
+
 	go func() {
 		<-ctx.Done()
 		fmt.Println("Shutting down server...")
@@ -47,16 +49,15 @@ func ListenAndServe(ctx context.Context, addr string) error {
 
 		go func() {
 			defer wg.Done()
-			handleConnection(conn)
+			handleConnection(conn, handler)
 		}()
 	}
 
 	wg.Wait()
-
 	return nil
 }
 
-func handleConnection(conn net.Conn) {
+func handleConnection(conn net.Conn, handler Handler) {
 	defer conn.Close()
 
 	fmt.Println("Client connected:", conn.RemoteAddr())
@@ -115,7 +116,7 @@ func handleConnection(conn net.Conn) {
 			"close",
 		)
 
-		resp := handleRequest(req)
+		resp := handler(req)
 
 		if shouldClose {
 			if resp.Headers == nil {
