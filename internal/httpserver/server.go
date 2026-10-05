@@ -1,11 +1,13 @@
 package httpserver
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -14,24 +16,44 @@ const (
 	writeTimeout = 5 * time.Second
 )
 
-func ListenAndServe(addr string) error {
+func ListenAndServe(ctx context.Context, addr string) error {
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
 	}
-
 	defer listener.Close()
 
 	fmt.Println("Listening on:", addr)
 
+	var wg sync.WaitGroup
+
+	go func() {
+		<-ctx.Done()
+		fmt.Println("Shutting down server...")
+		listener.Close()
+	}()
+
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
+			if ctx.Err() != nil {
+				break
+			}
+
 			return err
 		}
 
-		go handleConnection(conn)
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+			handleConnection(conn)
+		}()
 	}
+
+	wg.Wait()
+
+	return nil
 }
 
 func handleConnection(conn net.Conn) {
