@@ -1,5 +1,7 @@
 # go-http-from-scratch
 
+[![CI](https://github.com/sbrsn97/go-http-from-scratch/actions/workflows/ci.yml/badge.svg)](https://github.com/sbrsn97/go-http-from-scratch/actions/workflows/ci.yml)
+
 An HTTP/1.1 server implemented from scratch in Go on top of raw TCP connections.
 
 The project intentionally does **not** use Go's `net/http` server implementation. Its purpose is to explore how HTTP actually works below the framework level: TCP streams, request framing, parsing, persistent connections, concurrency, timeouts, body encoding, and response serialization.
