@@ -8,7 +8,6 @@ import (
 func TestSerializeResponse(t *testing.T) {
 	resp := Response{
 		StatusCode: 200,
-		StatusText: "OK",
 		Headers: map[string]string{
 			"Content-Type": "text/plain",
 		},
@@ -33,7 +32,6 @@ func TestSerializeResponse(t *testing.T) {
 func TestSerializeChunkedResponse(t *testing.T) {
 	resp := Response{
 		StatusCode: 200,
-		StatusText: "OK",
 		Headers: map[string]string{
 			"Content-Type": "text/plain",
 		},

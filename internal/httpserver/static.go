@@ -57,7 +57,6 @@ func serveStaticFile(requestPath string) Response {
 
 	return Response{
 		StatusCode: 200,
-		StatusText: "OK",
 		Headers: map[string]string{
 			"Content-Type": contentType,
 		},

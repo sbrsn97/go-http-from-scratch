@@ -167,3 +167,22 @@ func TestContentLength(t *testing.T) {
 		})
 	}
 }
+
+func TestParseHeadersRejectsWhitespaceBeforeColon(t *testing.T) {
+	lines := [][]byte{
+		[]byte("Host : localhost"),
+	}
+
+	_, err := parseHeaders(lines)
+	if err == nil {
+		t.Fatal("expected invalid header name to be rejected")
+	}
+}
+
+func TestParseRequestTargetRejectsNonOriginForm(t *testing.T) {
+	_, _, err := parseRequestTarget("http://example.com/test")
+
+	if err == nil {
+		t.Fatal("expected absolute-form target to be rejected")
+	}
+}

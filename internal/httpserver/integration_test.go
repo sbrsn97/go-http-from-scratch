@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"errors"
 	"net"
 	"testing"
 )
@@ -240,5 +241,56 @@ func TestChunkedRequestPreservesNextRequest(t *testing.T) {
 
 	if second.Path != "/hello" {
 		t.Errorf("expected second path /hello, got %q", second.Path)
+	}
+}
+
+func TestReadRequestRejectsContentLengthAndTransferEncoding(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	reader := newRequestReader(serverConn)
+
+	go func() {
+		_, _ = clientConn.Write([]byte(
+			"POST /echo HTTP/1.1\r\n" +
+				"Host: localhost\r\n" +
+				"Content-Length: 5\r\n" +
+				"Transfer-Encoding: chunked\r\n" +
+				"\r\n" +
+				"0\r\n\r\n",
+		))
+	}()
+
+	_, err := reader.readRequest()
+
+	if !errors.Is(err, errAmbiguousBodyFraming) {
+		t.Fatalf("expected errAmbiguousBodyFraming, got %v", err)
+	}
+}
+
+func TestReadRequestRejectsInvalidChunkSize(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	reader := newRequestReader(serverConn)
+
+	go func() {
+		_, _ = clientConn.Write([]byte(
+			"POST /echo HTTP/1.1\r\n" +
+				"Host: localhost\r\n" +
+				"Transfer-Encoding: chunked\r\n" +
+				"\r\n" +
+				"xyz\r\n" +
+				"hello\r\n" +
+				"0\r\n\r\n",
+		))
+	}()
+
+	_, err := reader.readRequest()
+
+	if !errors.Is(err, errInvalidChunkedBody) {
+		t.Fatalf("expected errInvalidChunkedBody, got %v", err)
 	}
 }

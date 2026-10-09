@@ -35,22 +35,6 @@ var (
 	errAmbiguousBodyFraming = errors.New("ambiguous request body framing")
 )
 
-func requestHeaderFieldsTooLargeResponse() Response {
-	return textResponse(
-		431,
-		"Request Header Fields Too Large",
-		"request headers too large\n",
-	)
-}
-
-func contentTooLargeResponse() Response {
-	return textResponse(
-		413,
-		"Content Too Large",
-		"request body too large\n",
-	)
-}
-
 func newRequestReader(conn net.Conn) *requestReader {
 	return &requestReader{
 		conn: conn,

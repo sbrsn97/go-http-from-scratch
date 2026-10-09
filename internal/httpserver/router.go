@@ -21,7 +21,6 @@ func handleRequest(req Request) Response {
 
 		return Response{
 			StatusCode: 200,
-			StatusText: "OK",
 			Headers: map[string]string{
 				"Content-Type": "text/html; charset=utf-8",
 			},
@@ -36,7 +35,6 @@ func handleRequest(req Request) Response {
 
 		return Response{
 			StatusCode: 200,
-			StatusText: "OK",
 			Headers: map[string]string{
 				"Content-Type": "text/plain; charset=utf-8",
 			},
@@ -60,7 +58,6 @@ func handleRequest(req Request) Response {
 
 		return Response{
 			StatusCode: 200,
-			StatusText: "OK",
 			Headers: map[string]string{
 				"Content-Type": "text/plain",
 			},
@@ -75,7 +72,6 @@ func handleRequest(req Request) Response {
 
 		return Response{
 			StatusCode: 200,
-			StatusText: "OK",
 			Headers: map[string]string{
 				"Content-Type": "text/plain",
 			},

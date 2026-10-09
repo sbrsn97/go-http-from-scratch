@@ -8,7 +8,6 @@ import (
 
 type Response struct {
 	StatusCode int
-	StatusText string
 	Headers    map[string]string
 	Body       []byte
 	Chunked    bool
@@ -31,7 +30,7 @@ func serializeResponse(resp Response) []byte {
 	statusLine := fmt.Sprintf(
 		"HTTP/1.1 %d %s\r\n",
 		resp.StatusCode,
-		resp.StatusText,
+		statusText(resp.StatusCode),
 	)
 
 	data = append(data, []byte(statusLine)...)
@@ -83,10 +82,9 @@ func appendChunkedBody(data []byte, body []byte) []byte {
 	return data
 }
 
-func textResponse(statusCode int, statusText string, body string) Response {
+func textResponse(statusCode int, body string) Response {
 	return Response{
 		StatusCode: statusCode,
-		StatusText: statusText,
 		Headers: map[string]string{
 			"Content-Type": "text/plain; charset=utf-8",
 		},
@@ -97,7 +95,6 @@ func textResponse(statusCode int, statusText string, body string) Response {
 func notFoundResponse() Response {
 	return textResponse(
 		404,
-		"Not Found",
 		"404 Not Found\n",
 	)
 }
@@ -105,7 +102,6 @@ func notFoundResponse() Response {
 func methodNotAllowedResponse() Response {
 	return textResponse(
 		405,
-		"Method Not Allowed",
 		"method not allowed\n",
 	)
 }
@@ -113,7 +109,48 @@ func methodNotAllowedResponse() Response {
 func internalServerErrorResponse() Response {
 	return textResponse(
 		500,
-		"Internal Server Error",
 		"internal server error\n",
 	)
+}
+
+func badRequestResponse() Response {
+	return textResponse(
+		400,
+		"400 Bad Request\n",
+	)
+}
+
+func requestHeaderTooLargeResponse() Response {
+	return textResponse(
+		431,
+		"request headers too large\n",
+	)
+}
+
+func contentTooLargeResponse() Response {
+	return textResponse(
+		413,
+		"request body too large\n",
+	)
+}
+
+func statusText(code int) string {
+	switch code {
+	case 200:
+		return "OK"
+	case 400:
+		return "Bad Request"
+	case 404:
+		return "Not Found"
+	case 405:
+		return "Method Not Allowed"
+	case 413:
+		return "Content Too Large"
+	case 431:
+		return "Request Header Fields Too Large"
+	case 500:
+		return "Internal Server Error"
+	default:
+		return "Unknown"
+	}
 }
