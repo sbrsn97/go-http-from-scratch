@@ -186,3 +186,28 @@ func TestParseRequestTargetRejectsNonOriginForm(t *testing.T) {
 		t.Fatal("expected absolute-form target to be rejected")
 	}
 }
+
+func TestParseHeadersRejectsDuplicateHost(t *testing.T) {
+	lines := [][]byte{
+		[]byte("Host: example.com"),
+		[]byte("Host: other.example.com"),
+	}
+
+	_, err := parseHeaders(lines)
+	if err == nil {
+		t.Fatal("expected duplicate Host to be rejected")
+	}
+}
+
+func TestParseHeadersRejectsDuplicateTransferEncoding(t *testing.T) {
+	lines := [][]byte{
+		[]byte("Host: localhost"),
+		[]byte("Transfer-Encoding: chunked"),
+		[]byte("Transfer-Encoding: chunked"),
+	}
+
+	_, err := parseHeaders(lines)
+	if err == nil {
+		t.Fatal("expected duplicate Transfer-Encoding to be rejected")
+	}
+}

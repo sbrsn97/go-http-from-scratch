@@ -24,15 +24,17 @@ type requestReader struct {
 }
 
 const (
-	maxHeaderBytes = 16 * 1024       // 16 KB
-	maxBodyBytes   = 1 * 1024 * 1024 // 1 MB
+	maxHeaderBytes        = 16 * 1024       // 16 KiB
+	maxBodyBytes          = 1 * 1024 * 1024 // 1 MiB
+	maxChunkMetadataBytes = 16 * 1024       // 16 KiB
 )
 
 var (
-	errHeaderTooLarge       = errors.New("request headers too large")
-	errBodyTooLarge         = errors.New("request body too large")
-	errInvalidChunkedBody   = errors.New("invalid chunked body")
-	errAmbiguousBodyFraming = errors.New("ambiguous request body framing")
+	errHeaderTooLarge        = errors.New("request headers too large")
+	errBodyTooLarge          = errors.New("request body too large")
+	errInvalidChunkedBody    = errors.New("invalid chunked body")
+	errAmbiguousBodyFraming  = errors.New("ambiguous request body framing")
+	errChunkMetadataTooLarge = errors.New("chunk metadata too large")
 )
 
 func newRequestReader(conn net.Conn) *requestReader {
@@ -160,9 +162,9 @@ func parseRequestLine(line []byte) (string, string, string, error) {
 	}
 
 	method := string(parts[0])
-
 	target := string(parts[1])
 	version := string(parts[2])
+
 	if version != "HTTP/1.1" {
 		return "", "", "", errors.New("unsupported HTTP version: " + version)
 	}
@@ -199,7 +201,6 @@ func parseHeaders(lines [][]byte) (map[string]string, error) {
 		}
 
 		parts := bytes.SplitN(line, []byte(":"), 2)
-
 		if len(parts) != 2 {
 			return nil, errors.New("invalid header line")
 		}
@@ -217,13 +218,10 @@ func parseHeaders(lines [][]byte) (map[string]string, error) {
 		name := strings.ToLower(string(rawName))
 		value := string(bytes.TrimSpace(parts[1]))
 
-		if name == "" {
-			return nil, errors.New("header name cannot be empty")
-		}
-
-		if name == "content-length" {
+		switch name {
+		case "content-length", "host", "transfer-encoding":
 			if _, exists := headers[name]; exists {
-				return nil, errors.New("duplicate Content-Length")
+				return nil, errors.New("duplicate critical header")
 			}
 		}
 
@@ -236,11 +234,16 @@ func parseHeaders(lines [][]byte) (map[string]string, error) {
 func (r *requestReader) readChunkedBody(bodyStart int) ([]byte, int, error) {
 	position := bodyStart
 	var body []byte
+	metadataBytes := 0
 
 	for {
 		lineEnd := bytes.Index(r.data[position:], []byte("\r\n"))
 
 		for lineEnd == -1 {
+			if len(r.data)-position > maxChunkMetadataBytes-metadataBytes {
+				return nil, 0, errChunkMetadataTooLarge
+			}
+
 			if err := r.readMore(); err != nil {
 				return nil, 0, err
 			}
@@ -249,6 +252,14 @@ func (r *requestReader) readChunkedBody(bodyStart int) ([]byte, int, error) {
 		}
 
 		lineEnd += position
+
+		lineBytes := lineEnd - position + 2
+		if metadataBytes+lineBytes > maxChunkMetadataBytes {
+			return nil, 0, errChunkMetadataTooLarge
+		}
+
+		metadataBytes += lineBytes
+
 		sizeLine := r.data[position:lineEnd]
 
 		semicolon := bytes.IndexByte(sizeLine, ';')
@@ -289,7 +300,6 @@ func (r *requestReader) readChunkedBody(bodyStart int) ([]byte, int, error) {
 		}
 
 		body = append(body, r.data[position:chunkEnd]...)
-
 		position = requiredEnd
 	}
 
@@ -297,6 +307,10 @@ func (r *requestReader) readChunkedBody(bodyStart int) ([]byte, int, error) {
 		lineEnd := bytes.Index(r.data[position:], []byte("\r\n"))
 
 		for lineEnd == -1 {
+			if len(r.data)-position > maxChunkMetadataBytes-metadataBytes {
+				return nil, 0, errChunkMetadataTooLarge
+			}
+
 			if err := r.readMore(); err != nil {
 				return nil, 0, err
 			}
@@ -305,6 +319,13 @@ func (r *requestReader) readChunkedBody(bodyStart int) ([]byte, int, error) {
 		}
 
 		lineEnd += position
+
+		lineBytes := lineEnd - position + 2
+		if metadataBytes+lineBytes > maxChunkMetadataBytes {
+			return nil, 0, errChunkMetadataTooLarge
+		}
+
+		metadataBytes += lineBytes
 
 		if lineEnd == position {
 			position += 2

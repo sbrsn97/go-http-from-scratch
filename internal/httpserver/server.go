@@ -98,9 +98,6 @@ func handleConnection(conn net.Conn, handler Handler) {
 			return
 		}
 
-		fmt.Println("method:", req.Method)
-		fmt.Println("path:", req.Path)
-
 		shouldClose := strings.EqualFold(
 			req.Headers["connection"],
 			"close",

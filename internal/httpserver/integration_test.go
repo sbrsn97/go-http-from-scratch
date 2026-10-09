@@ -3,6 +3,7 @@ package httpserver
 import (
 	"errors"
 	"net"
+	"strings"
 	"testing"
 )
 
@@ -292,5 +293,61 @@ func TestReadRequestRejectsInvalidChunkSize(t *testing.T) {
 
 	if !errors.Is(err, errInvalidChunkedBody) {
 		t.Fatalf("expected errInvalidChunkedBody, got %v", err)
+	}
+}
+
+func TestReadRequestRejectsOversizedChunkMetadata(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	reader := newRequestReader(serverConn)
+
+	go func() {
+		request :=
+			"POST /echo HTTP/1.1\r\n" +
+				"Host: localhost\r\n" +
+				"Transfer-Encoding: chunked\r\n" +
+				"\r\n" +
+				"1;" + strings.Repeat("a", maxChunkMetadataBytes) + "\r\n" +
+				"x\r\n" +
+				"0\r\n\r\n"
+
+		_, _ = clientConn.Write([]byte(request))
+	}()
+
+	_, err := reader.readRequest()
+
+	if !errors.Is(err, errChunkMetadataTooLarge) {
+		t.Fatalf("expected errChunkMetadataTooLarge, got %v", err)
+	}
+}
+
+func TestReadRequestRejectsOversizedChunkTrailer(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	reader := newRequestReader(serverConn)
+
+	go func() {
+		request :=
+			"POST /echo HTTP/1.1\r\n" +
+				"Host: localhost\r\n" +
+				"Transfer-Encoding: chunked\r\n" +
+				"\r\n" +
+				"1\r\n" +
+				"x\r\n" +
+				"0\r\n" +
+				"X-Huge-Trailer: " + strings.Repeat("a", maxChunkMetadataBytes) + "\r\n" +
+				"\r\n"
+
+		_, _ = clientConn.Write([]byte(request))
+	}()
+
+	_, err := reader.readRequest()
+
+	if !errors.Is(err, errChunkMetadataTooLarge) {
+		t.Fatalf("expected errChunkMetadataTooLarge, got %v", err)
 	}
 }
