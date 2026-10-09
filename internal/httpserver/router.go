@@ -29,6 +29,22 @@ func handleRequest(req Request) Response {
 		}
 	}
 
+	if req.Path == "/chunked" {
+		if req.Method != "GET" {
+			return methodNotAllowedResponse()
+		}
+
+		return Response{
+			StatusCode: 200,
+			StatusText: "OK",
+			Headers: map[string]string{
+				"Content-Type": "text/plain; charset=utf-8",
+			},
+			Body:    []byte("hello from a chunked response\n"),
+			Chunked: true,
+		}
+	}
+
 	if strings.HasPrefix(req.Path, "/static/") {
 		if req.Method != "GET" {
 			return methodNotAllowedResponse()

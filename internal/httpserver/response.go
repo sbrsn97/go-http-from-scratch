@@ -11,6 +11,7 @@ type Response struct {
 	StatusText string
 	Headers    map[string]string
 	Body       []byte
+	Chunked    bool
 }
 
 func writeResponse(conn net.Conn, resp Response) error {
@@ -35,7 +36,13 @@ func serializeResponse(resp Response) []byte {
 
 	data = append(data, []byte(statusLine)...)
 
-	resp.Headers["Content-Length"] = strconv.Itoa(len(resp.Body))
+	if resp.Chunked {
+		resp.Headers["Transfer-Encoding"] = "chunked"
+		delete(resp.Headers, "Content-Length")
+	} else {
+		resp.Headers["Content-Length"] = strconv.Itoa(len(resp.Body))
+		delete(resp.Headers, "Transfer-Encoding")
+	}
 
 	for name, value := range resp.Headers {
 		headerLine := fmt.Sprintf("%s: %s\r\n", name, value)
@@ -43,7 +50,35 @@ func serializeResponse(resp Response) []byte {
 	}
 
 	data = append(data, []byte("\r\n")...)
-	data = append(data, resp.Body...)
+
+	if resp.Chunked {
+		data = appendChunkedBody(data, resp.Body)
+	} else {
+		data = append(data, resp.Body...)
+	}
+
+	return data
+}
+
+func appendChunkedBody(data []byte, body []byte) []byte {
+	const chunkSize = 8
+
+	for len(body) > 0 {
+		size := chunkSize
+		if len(body) < size {
+			size = len(body)
+		}
+
+		chunk := body[:size]
+
+		data = append(data, []byte(fmt.Sprintf("%x\r\n", len(chunk)))...)
+		data = append(data, chunk...)
+		data = append(data, []byte("\r\n")...)
+
+		body = body[size:]
+	}
+
+	data = append(data, []byte("0\r\n\r\n")...)
 
 	return data
 }
