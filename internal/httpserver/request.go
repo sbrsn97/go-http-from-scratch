@@ -29,8 +29,10 @@ const (
 )
 
 var (
-	errHeaderTooLarge = errors.New("request headers too large")
-	errBodyTooLarge   = errors.New("request body too large")
+	errHeaderTooLarge       = errors.New("request headers too large")
+	errBodyTooLarge         = errors.New("request body too large")
+	errInvalidChunkedBody   = errors.New("invalid chunked body")
+	errAmbiguousBodyFraming = errors.New("ambiguous request body framing")
 )
 
 func requestHeaderFieldsTooLargeResponse() Response {
@@ -56,8 +58,6 @@ func newRequestReader(conn net.Conn) *requestReader {
 }
 
 func (r *requestReader) readRequest() (Request, error) {
-	readBuffer := make([]byte, 1024)
-
 	headerEnd := bytes.Index(r.data, []byte("\r\n\r\n"))
 
 	for headerEnd == -1 {
@@ -65,12 +65,10 @@ func (r *requestReader) readRequest() (Request, error) {
 			return Request{}, errHeaderTooLarge
 		}
 
-		n, err := r.conn.Read(readBuffer)
-		if err != nil {
+		if err := r.readMore(); err != nil {
 			return Request{}, err
 		}
 
-		r.data = append(r.data, readBuffer[:n]...)
 		headerEnd = bytes.Index(r.data, []byte("\r\n\r\n"))
 	}
 
@@ -104,28 +102,58 @@ func (r *requestReader) readRequest() (Request, error) {
 		return Request{}, errors.New("missing host header")
 	}
 
-	length, err := contentLength(headers)
-	if err != nil {
-		return Request{}, err
-	}
+	_, hasContentLength := headers["content-length"]
+	transferEncoding, hasTransferEncoding := headers["transfer-encoding"]
 
-	if length > maxBodyBytes {
-		return Request{}, errBodyTooLarge
+	if hasContentLength && hasTransferEncoding {
+		return Request{}, errAmbiguousBodyFraming
 	}
 
 	bodyStart := headerEnd + 4
-	requestEnd := bodyStart + length
 
-	for len(r.data) < requestEnd {
-		n, err := r.conn.Read(readBuffer)
+	var body []byte
+	var requestEnd int
+
+	switch {
+	case hasTransferEncoding:
+		if !strings.EqualFold(strings.TrimSpace(transferEncoding), "chunked") {
+			return Request{}, errors.New("unsupported Transfer-Encoding")
+		}
+
+		chunkedBody, end, err := r.readChunkedBody(bodyStart)
 		if err != nil {
 			return Request{}, err
 		}
 
-		r.data = append(r.data, readBuffer[:n]...)
+		body = chunkedBody
+		requestEnd = end
+
+	case hasContentLength:
+		length, err := contentLength(headers)
+		if err != nil {
+			return Request{}, err
+		}
+
+		if length > maxBodyBytes {
+			return Request{}, errBodyTooLarge
+		}
+
+		requestEnd = bodyStart + length
+
+		for len(r.data) < requestEnd {
+			if err := r.readMore(); err != nil {
+				return Request{}, err
+			}
+		}
+
+		body = append([]byte(nil), r.data[bodyStart:requestEnd]...)
+
+	default:
+		body = []byte{}
+		requestEnd = bodyStart
 	}
 
-	body := append([]byte(nil), r.data[bodyStart:requestEnd]...)
+	r.data = r.data[requestEnd:]
 
 	req := Request{
 		Method:   method,
@@ -136,8 +164,6 @@ func (r *requestReader) readRequest() (Request, error) {
 		Headers:  headers,
 		Body:     body,
 	}
-
-	r.data = r.data[requestEnd:]
 
 	return req, nil
 }
@@ -223,6 +249,90 @@ func parseHeaders(lines [][]byte) (map[string]string, error) {
 	return headers, nil
 }
 
+func (r *requestReader) readChunkedBody(bodyStart int) ([]byte, int, error) {
+	position := bodyStart
+	var body []byte
+
+	for {
+		lineEnd := bytes.Index(r.data[position:], []byte("\r\n"))
+
+		for lineEnd == -1 {
+			if err := r.readMore(); err != nil {
+				return nil, 0, err
+			}
+
+			lineEnd = bytes.Index(r.data[position:], []byte("\r\n"))
+		}
+
+		lineEnd += position
+		sizeLine := r.data[position:lineEnd]
+
+		semicolon := bytes.IndexByte(sizeLine, ';')
+		if semicolon != -1 {
+			sizeLine = sizeLine[:semicolon]
+		}
+
+		if len(sizeLine) == 0 {
+			return nil, 0, errInvalidChunkedBody
+		}
+
+		chunkSize, err := strconv.ParseUint(string(sizeLine), 16, 64)
+		if err != nil {
+			return nil, 0, errInvalidChunkedBody
+		}
+
+		position = lineEnd + 2
+
+		if chunkSize == 0 {
+			break
+		}
+
+		if chunkSize > uint64(maxBodyBytes-len(body)) {
+			return nil, 0, errBodyTooLarge
+		}
+
+		chunkEnd := position + int(chunkSize)
+		requiredEnd := chunkEnd + 2
+
+		for len(r.data) < requiredEnd {
+			if err := r.readMore(); err != nil {
+				return nil, 0, err
+			}
+		}
+
+		if !bytes.Equal(r.data[chunkEnd:requiredEnd], []byte("\r\n")) {
+			return nil, 0, errInvalidChunkedBody
+		}
+
+		body = append(body, r.data[position:chunkEnd]...)
+
+		position = requiredEnd
+	}
+
+	for {
+		lineEnd := bytes.Index(r.data[position:], []byte("\r\n"))
+
+		for lineEnd == -1 {
+			if err := r.readMore(); err != nil {
+				return nil, 0, err
+			}
+
+			lineEnd = bytes.Index(r.data[position:], []byte("\r\n"))
+		}
+
+		lineEnd += position
+
+		if lineEnd == position {
+			position += 2
+			break
+		}
+
+		position = lineEnd + 2
+	}
+
+	return body, position, nil
+}
+
 func contentLength(headers map[string]string) (int, error) {
 	value, ok := headers["content-length"]
 	if !ok {
@@ -239,4 +349,16 @@ func contentLength(headers map[string]string) (int, error) {
 	}
 
 	return length, nil
+}
+
+func (r *requestReader) readMore() error {
+	buffer := make([]byte, 1024)
+
+	n, err := r.conn.Read(buffer)
+	if err != nil {
+		return err
+	}
+
+	r.data = append(r.data, buffer[:n]...)
+	return nil
 }

@@ -133,3 +133,112 @@ func TestReadRequestRejectsOversizedBody(t *testing.T) {
 		t.Fatalf("expected errBodyTooLarge, got %v", err)
 	}
 }
+
+func TestReadChunkedRequestBody(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	reader := newRequestReader(serverConn)
+
+	go func() {
+		_, _ = clientConn.Write([]byte(
+			"POST /echo HTTP/1.1\r\n" +
+				"Host: localhost\r\n" +
+				"Transfer-Encoding: chunked\r\n" +
+				"\r\n" +
+				"5\r\n" +
+				"hello\r\n" +
+				"6\r\n" +
+				" world\r\n" +
+				"0\r\n" +
+				"\r\n",
+		))
+	}()
+
+	req, err := reader.readRequest()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if string(req.Body) != "hello world" {
+		t.Errorf("expected %q, got %q", "hello world", string(req.Body))
+	}
+}
+
+func TestReadChunkedRequestAcrossMultipleWrites(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	reader := newRequestReader(serverConn)
+
+	go func() {
+		parts := []string{
+			"POST /echo HTTP/1.1\r\n",
+			"Host: localhost\r\n",
+			"Transfer-Encoding: chunked\r\n",
+			"\r\n",
+			"5\r",
+			"\nhel",
+			"lo\r\n",
+			"6\r\n",
+			" world\r",
+			"\n0\r\n",
+			"\r\n",
+		}
+
+		for _, part := range parts {
+			_, _ = clientConn.Write([]byte(part))
+		}
+	}()
+
+	req, err := reader.readRequest()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if string(req.Body) != "hello world" {
+		t.Errorf("expected %q, got %q", "hello world", string(req.Body))
+	}
+}
+
+func TestChunkedRequestPreservesNextRequest(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	reader := newRequestReader(serverConn)
+
+	go func() {
+		_, _ = clientConn.Write([]byte(
+			"POST /echo HTTP/1.1\r\n" +
+				"Host: localhost\r\n" +
+				"Transfer-Encoding: chunked\r\n" +
+				"\r\n" +
+				"5\r\nhello\r\n" +
+				"0\r\n\r\n" +
+				"GET /hello HTTP/1.1\r\n" +
+				"Host: localhost\r\n" +
+				"\r\n",
+		))
+	}()
+
+	first, err := reader.readRequest()
+	if err != nil {
+		t.Fatalf("reading first request: %v", err)
+	}
+
+	second, err := reader.readRequest()
+	if err != nil {
+		t.Fatalf("reading second request: %v", err)
+	}
+
+	if string(first.Body) != "hello" {
+		t.Errorf("expected first body %q, got %q", "hello", string(first.Body))
+	}
+
+	if second.Path != "/hello" {
+		t.Errorf("expected second path /hello, got %q", second.Path)
+	}
+}
